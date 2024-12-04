@@ -6,14 +6,19 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.example.camerax.ui.theme.CameraXTheme
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.util.Log
+import android.widget.Toast
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture.OnImageCapturedCallback
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
+import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoRecordEvent
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.rememberBottomSheetScaffoldState
@@ -23,6 +28,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.camera.view.CameraController
 import androidx.camera.view.LifecycleCameraController
+import androidx.camera.view.video.AudioConfig
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -46,9 +52,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.camerax.ui.theme.CameraPreview
 import com.example.camerax.ui.theme.PhotoBottomSheetContent
 import kotlinx.coroutines.launch
+import java.io.File
 
 
 class MainActivity : ComponentActivity() {
+
+    private var recording : Recording? = null
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -124,7 +133,9 @@ class MainActivity : ComponentActivity() {
                                 Icon(imageVector = Icons.Default.PhotoCamera,
                                     contentDescription = "Photo Camera")
                             }
-                            IconButton(onClick = {},
+                            IconButton(onClick = {
+                                recordVideo(controller)
+                            },
                                 modifier = Modifier.size(30.dp)){
                                 Icon(imageVector = Icons.Default.Videocam,
                                     contentDescription = "Video Camera")
@@ -143,6 +154,9 @@ class MainActivity : ComponentActivity() {
         controller: LifecycleCameraController,
         onPhotoTaken : (Bitmap)-> Unit
     ){
+        if(!hasRequiredPermissions()){
+            return
+        }
         controller.takePicture(
             ContextCompat.getMainExecutor(applicationContext),
             object: OnImageCapturedCallback(){
@@ -170,8 +184,42 @@ class MainActivity : ComponentActivity() {
                 }
             }
         )
+    }
 
+    @SuppressLint("MissingPermission")
+    private fun recordVideo(controller: LifecycleCameraController){
+        if(recording != null){
+            recording?.stop()
+            recording = null
+            return
+        }
+        if(!hasRequiredPermissions()){
+            return
+        }
+        val outputFile = File(filesDir,"my-recording.mp4")
+        recording = controller.startRecording(
+            FileOutputOptions.Builder(outputFile).build(),
+            AudioConfig.create(true),
+            ContextCompat.getMainExecutor(applicationContext)
+        ){event->
+            when(event) {
+                is VideoRecordEvent.Finalize -> {
+                    if(event.hasError()) {
+                        recording?.close()
+                        recording = null
 
+                        Toast.makeText(applicationContext,
+                            "Video Recording Failed",
+                            Toast.LENGTH_LONG).show()
+                    }else{
+                        Toast.makeText(applicationContext,
+                            "Video Recording Succeeded",
+                            Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+
+        }
     }
     private fun hasRequiredPermissions(): Boolean {
         return CAMERAX_PERMISSIONS.all {
